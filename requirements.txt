@@ -1,0 +1,9 @@
+selenium==4.18.1
+openai==1.14.0
+fastapi
+uvicorn==0.27.1
+pydantic
+pyyaml==6.0.1
+requests==2.31.0
+python-dotenv==1.0.1
+python-multipart==0.0.7

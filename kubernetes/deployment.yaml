@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verixai-automation
+  labels:
+    app: verixai-automation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verixai-automation
+  template:
+    metadata:
+      labels:
+        app: verixai-automation
+    spec:
+      containers:
+      - name: verixai-automation
+        image: ${ACR_NAME}.azurecr.io/verixai-automation:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        env:
+        - name: CHROME_BIN
+          value: "/usr/bin/google-chrome-stable"
+        - name: CHROMEDRIVER_PATH
+          value: "/usr/local/bin/chromedriver"
+        - name: AZURE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: azure-api-key
+        - name: AZURE_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: azure-endpoint
+        - name: LOGIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: login-email
+        - name: LOGIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: login-password
+        - name: EMAIL_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: email-username
+        - name: EMAIL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: verixai-secrets
+              key: email-password
+        volumeMounts:
+        - name: test-results
+          mountPath: /app/test_results
+        - name: screenshots
+          mountPath: /app/screenshots
+        - name: logs
+          mountPath: /app/logs
+        - name: sample-data
+          mountPath: /app/sample_data
+        - name: static
+          mountPath: /app/static
+      volumes:
+      - name: test-results
+        persistentVolumeClaim:
+          claimName: verixai-test-results-pvc
+      - name: screenshots
+        persistentVolumeClaim:
+          claimName: verixai-screenshots-pvc
+      - name: logs
+        persistentVolumeClaim:
+          claimName: verixai-logs-pvc
+      - name: sample-data
+        persistentVolumeClaim:
+          claimName: verixai-sample-data-pvc
+      - name: static
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: verixai-automation
+spec:
+  selector:
+    app: verixai-automation
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: verixai-test-results-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: verixai-screenshots-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: verixai-logs-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: verixai-sample-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: verixai-secrets
+type: Opaque
+data:
+  # These values should be base64 encoded
+  azure-api-key: ${AZURE_API_KEY_BASE64}
+  azure-endpoint: ${AZURE_ENDPOINT_BASE64}
+  login-email: ${LOGIN_EMAIL_BASE64}
+  login-password: ${LOGIN_PASSWORD_BASE64}
+  email-username: ${EMAIL_USERNAME_BASE64}
+  email-password: ${EMAIL_PASSWORD_BASE64}

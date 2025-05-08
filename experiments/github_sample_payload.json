@@ -1,0 +1,16 @@
+{
+  "case_details": {
+    "title": "GitHub Actions Test Case",
+    "plaintiff_name": "GitHub User",
+    "medical_provider": "GitHub Hospital",
+    "description": "This is a test case for VerixAI automation triggered from GitHub Actions"
+  },
+  "env": "dev",
+  "webhook": {
+    "url": "https://example.com/webhook",
+    "events": ["test_started", "test_completed", "test_error"],
+    "headers": {
+      "Authorization": "Bearer github-token-here"
+    }
+  }
+}

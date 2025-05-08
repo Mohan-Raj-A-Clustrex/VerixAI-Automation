@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VerixAI Test Log Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .log-container {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            height: 500px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.connected {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .status.disconnected {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .status.connecting {
+            background-color: #fcf8e3;
+            color: #8a6d3b;
+        }
+        .stdout {
+            color: #333;
+        }
+        .stderr {
+            color: #d9534f;
+        }
+        .event {
+            color: #5bc0de;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VerixAI Test Log Viewer</h1>
+        
+        <div class="form-group">
+            <label for="test-id">Test ID:</label>
+            <input type="text" id="test-id" placeholder="Enter test ID">
+        </div>
+        
+        <div class="form-group">
+            <button id="connect-btn">Connect</button>
+            <button id="disconnect-btn" disabled>Disconnect</button>
+            <button id="clear-btn">Clear Logs</button>
+        </div>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div id="log-container" class="log-container"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const testIdInput = document.getElementById('test-id');
+            const connectBtn = document.getElementById('connect-btn');
+            const disconnectBtn = document.getElementById('disconnect-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const statusDiv = document.getElementById('status');
+            const logContainer = document.getElementById('log-container');
+            
+            let socket = null;
+            
+            // Connect to WebSocket
+            connectBtn.addEventListener('click', function() {
+                const testId = testIdInput.value.trim();
+                if (!testId) {
+                    alert('Please enter a test ID');
+                    return;
+                }
+                
+                // Update UI
+                statusDiv.className = 'status connecting';
+                statusDiv.textContent = 'Connecting...';
+                connectBtn.disabled = true;
+                
+                // Create WebSocket connection
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/test-logs/${testId}`;
+                
+                socket = new WebSocket(wsUrl);
+                
+                // Connection opened
+                socket.addEventListener('open', function(event) {
+                    statusDiv.className = 'status connected';
+                    statusDiv.textContent = 'Connected';
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    
+                    // Add connection message to log
+                    appendToLog('Connected to log stream', 'event');
+                });
+                
+                // Listen for messages
+                socket.addEventListener('message', function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.event === 'initial_logs') {
+                            // Display initial logs
+                            appendToLog(`Initial logs for test ${data.test_id} (Status: ${data.status})`, 'event');
+                            if (data.logs) {
+                                appendToLog(data.logs, 'stdout');
+                            }
+                        } else if (data.event === 'log_update') {
+                            // Display new log entry
+                            appendToLog(data.log, data.stream_type);
+                        } else if (data.event === 'test_started') {
+                            // Test started event
+                            appendToLog(`Test ${data.test_id} started at ${data.start_time}`, 'event');
+                        } else if (data.event === 'test_completed') {
+                            // Test completed event
+                            appendToLog(`Test ${data.test_id} completed at ${data.end_time}`, 'event');
+                            if (data.result) {
+                                appendToLog(`Result: ${JSON.stringify(data.result, null, 2)}`, 'event');
+                            }
+                        } else if (data.event === 'test_error') {
+                            // Test error event
+                            appendToLog(`Test ${data.test_id} failed with error: ${data.error}`, 'stderr');
+                        } else if (data.event === 'error') {
+                            // Error message
+                            appendToLog(`Error: ${data.message}`, 'stderr');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                        appendToLog(`Error parsing message: ${e.message}`, 'stderr');
+                    }
+                });
+                
+                // Connection closed
+                socket.addEventListener('close', function(event) {
+                    statusDiv.className = 'status disconnected';
+                    statusDiv.textContent = 'Disconnected';
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    
+                    // Add disconnection message to log
+                    appendToLog('Disconnected from log stream', 'event');
+                    
+                    socket = null;
+                });
+                
+                // Connection error
+                socket.addEventListener('error', function(event) {
+                    statusDiv.className = 'status disconnected';
+                    statusDiv.textContent = 'Connection error';
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    
+                    // Add error message to log
+                    appendToLog('WebSocket connection error', 'stderr');
+                    
+                    socket = null;
+                });
+            });
+            
+            // Disconnect from WebSocket
+            disconnectBtn.addEventListener('click', function() {
+                if (socket) {
+                    socket.close();
+                }
+            });
+            
+            // Clear logs
+            clearBtn.addEventListener('click', function() {
+                logContainer.innerHTML = '';
+            });
+            
+            // Function to append log entries
+            function appendToLog(text, type) {
+                const entry = document.createElement('div');
+                entry.className = type || 'stdout';
+                entry.textContent = text;
+                logContainer.appendChild(entry);
+                
+                // Auto-scroll to bottom
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        });
+    </script>
+</body>
+</html>

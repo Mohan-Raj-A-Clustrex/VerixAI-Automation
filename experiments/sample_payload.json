@@ -1,0 +1,17 @@
+{
+  "case_details": {
+    "title": "Sample Test Case",
+    "plaintiff_name": "John Doe",
+    "medical_provider": "Test Hospital",
+    "description": "This is a sample test case for VerixAI automation"
+  },
+  "env": "dev",
+  "webhook": {
+    "url": "https://example.com/webhook",
+    "events": ["test_started", "test_completed", "test_error"],
+    "headers": {
+      "Authorization": "Bearer your-token-here",
+      "X-Custom-Header": "custom-value"
+    }
+  }
+}
