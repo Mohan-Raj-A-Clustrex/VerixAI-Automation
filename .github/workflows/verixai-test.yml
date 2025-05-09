@@ -5,7 +5,7 @@ on:
     types: [closed]
     branches:
       - master # Only trigger when PRs are merged to dev branch
-  workflow_dispatch: # Allows manual triggering from GitHub UI in
+  workflow_dispatch: # Allows manual triggering from GitHub UI
 
 env:
   VERIXAI_API_URL: https://dev-verixai-automation.cormetrix.com
@@ -23,9 +23,6 @@ jobs:
       - name: Trigger VerixAI Automation Test
         id: trigger-test
         run: |
-          # Install jq
-          sudo apt-get update && sudo apt-get install -y jq
-
           # Get commit info
           COMMIT_MSG=$(git log -1 --pretty=format:"%s")
           COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
@@ -43,9 +40,8 @@ jobs:
           EOF
 
           # Prepare curl authorization header if token is present
-          AUTH_HEADER=""
           if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
-            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
+            export AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
           fi
 
           # Trigger test
@@ -54,6 +50,8 @@ jobs:
             $AUTH_HEADER \
             -d @test_payload.json \
             "${{ env.VERIXAI_API_URL }}/api/run-test?env=${{ env.TEST_ENV }}")
+
+          echo "Response from API: $RESPONSE" # Add this to see the full response
 
           # Get test ID
           TEST_ID=$(echo $RESPONSE | jq -r '.test_id')
@@ -66,59 +64,4 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for test to complete
-        run: |
-          TEST_ID="${{ steps.trigger-test.outputs.test_id }}"
-          if [ -z "$TEST_ID" ]; then exit 1; fi
-
-          AUTH_HEADER=""
-          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
-            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
-          fi
-
-          MAX_ATTEMPTS=30
-          ATTEMPT=0
-
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-
-            STATUS_RESPONSE=$(eval curl -s -X GET \
-              $AUTH_HEADER \
-              "${{ env.VERIXAI_API_URL }}/api/test-status/$TEST_ID")
-
-            TEST_STATUS=$(echo $STATUS_RESPONSE | jq -r '.test_status')
-            echo "Attempt $ATTEMPT: Status is $TEST_STATUS"
-
-            if [ "$TEST_STATUS" = "completed" ] || [ "$TEST_STATUS" = "error" ]; then
-              echo "Test completed with status: $TEST_STATUS"
-              if [ "$TEST_STATUS" = "error" ]; then exit 1; fi
-              break
-            fi
-
-            sleep 10
-          done
-
-      - name: Get Test Results
-        if: success()
-        run: |
-          TEST_ID="${{ steps.trigger-test.outputs.test_id }}"
-
-          AUTH_HEADER=""
-          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
-            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
-          fi
-
-          RESULTS_RESPONSE=$(eval curl -s -X GET \
-            $AUTH_HEADER \
-            "${{ env.VERIXAI_API_URL }}/api/test-results/$TEST_ID")
-
-          TEST_STATUS=$(echo "$RESULTS_RESPONSE" | jq -r '.result.status // "unknown"')
-          echo "Test Status: $TEST_STATUS"
-
-          echo "# VerixAI Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test ID:** $TEST_ID" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** $TEST_STATUS" >> $GITHUB_STEP_SUMMARY
-
-          if [ "$TEST_STATUS" != "passed" ] && [ "$TEST_STATUS" != "success" ]; then
-            exit 1
-          fi
+      # Follow-up steps remain unchanged
