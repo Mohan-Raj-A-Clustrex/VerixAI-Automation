@@ -1,10 +1,10 @@
 name: Trigger VerixAI Automation Tests
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - dev # Only trigger when PRs are merged to dev branch
+  # pull_request:
+  #   types: [closed]
+  #   branches:
+  #     - dev # Only trigger when PRs are merged to dev branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 env:
