@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - master # Only trigger when PRs are merged to dev branch
+      - master # Only trigger when PRs are merged to master branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 env:
@@ -13,8 +13,8 @@ env:
 
 jobs:
   trigger-tests:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    runs-on: windows-latest
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout Code
@@ -22,46 +22,60 @@ jobs:
 
       - name: Trigger VerixAI Automation Test
         id: trigger-test
+        shell: pwsh
         run: |
           # Get commit info
-          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
-          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+          $COMMIT_MSG = git log -1 --pretty=format:"%s"
+          $COMMIT_AUTHOR = git log -1 --pretty=format:"%an"
 
           # Create payload with only case details
-          cat > test_payload.json << EOF
-          {
-            "case_details": {
-              "title": "Merged PR - ${COMMIT_AUTHOR}",
-              "plaintiff_name": "GitHub PR-${{ github.run_id }}",
-              "medical_provider": "Test Hospital",
-              "description": "Automated test triggered by merged PR: ${COMMIT_MSG}"
+          $payload = @{
+            case_details = @{
+              title = "Merged PR - $COMMIT_AUTHOR"
+              plaintiff_name = "GitHub PR-${{ github.run_id }}"
+              medical_provider = "Test Hospital"
+              description = "Automated test triggered by merged PR: $COMMIT_MSG"
             }
-          }
-          EOF
+          } | ConvertTo-Json -Depth 10
 
-          # Prepare curl authorization header if token is present
-          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
-            export AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
-          fi
+          # Save payload to file for debugging
+          $payload | Out-File -FilePath test_payload.json
+
+          # Prepare headers
+          $headers = @{
+            "Content-Type" = "application/json"
+          }
+
+          # Add authorization header if token is present
+          $apiToken = "${{ secrets.VERIXAI_API_TOKEN }}"
+          if ($apiToken -and $apiToken -ne "") {
+            $headers["Authorization"] = "Bearer $apiToken"
+          }
 
           # Trigger test
-          RESPONSE=$(eval curl -s -X POST \
-            -H "Content-Type: application/json" \
-            $AUTH_HEADER \
-            -d @test_payload.json \
-            "${{ env.VERIXAI_API_URL }}/api/run-test?env=${{ env.TEST_ENV }}")
+          try {
+            $response = Invoke-RestMethod -Uri "${{ env.VERIXAI_API_URL }}/api/run-test?env=${{ env.TEST_ENV }}" -Method Post -Headers $headers -Body $payload
 
-          echo "Response from API: $RESPONSE" # Add this to see the full response
+            # Output response for debugging
+            Write-Output "Response from API:"
+            $response | ConvertTo-Json
 
-          # Get test ID
-          TEST_ID=$(echo $RESPONSE | jq -r '.test_id')
-          echo "test_id=$TEST_ID" >> $GITHUB_OUTPUT
-          echo "Triggered test with ID: $TEST_ID"
+            # Get test ID
+            $TEST_ID = $response.test_id
+            "test_id=$TEST_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Output "Triggered test with ID: $TEST_ID"
 
-          # Check if successful
-          if [ -z "$TEST_ID" ] || [ "$TEST_ID" == "null" ]; then
-            echo "Failed to trigger test. API response: $RESPONSE"
+            # Check if successful
+            if (-not $TEST_ID) {
+              Write-Output "Failed to trigger test. API response: $($response | ConvertTo-Json)"
+              exit 1
+            }
+          }
+          catch {
+            Write-Output "Error calling API: $_"
+            Write-Output "Status Code: $($_.Exception.Response.StatusCode.value__)"
+            Write-Output "Response: $($_.ErrorDetails.Message)"
             exit 1
-          fi
+          }
 
       # Follow-up steps remain unchanged
