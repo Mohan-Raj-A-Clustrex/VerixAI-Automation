@@ -1,204 +1,124 @@
-name: VerixAI Test
-
-# Required secrets:
-# - VERIXAI_AUTOMATION_API_URL: URL of the VerixAI Automation API
-# - API_TOKEN: Authentication token for the API
-# - WEBHOOK_URL: URL for webhook notifications (optional)
-# - WEBHOOK_TOKEN: Authentication token for webhook (optional)
+name: Trigger VerixAI Automation Tests
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to run tests in'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
-      timeout_minutes:
-        description: 'Maximum time to wait for test completion (minutes)'
-        required: false
-        default: '30'
-        type: string
+  pull_request:
+    types: [closed]
+    branches:
+      - dev # Only trigger when PRs are merged to dev branch
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+env:
+  VERIXAI_API_URL: https://dev-verixai-automation.cormetrix.com
+  TEST_ENV: dev
 
 jobs:
-  run-automation:
+  trigger-tests:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up test files
+      - name: Trigger VerixAI Automation Test
+        id: trigger-test
         run: |
-          # Create directories for test files if they don't exist
-          mkdir -p sample_data/notes_folder
-          mkdir -p sample_data/imaging_folder
+          # Install jq
+          sudo apt-get update && sudo apt-get install -y jq
 
-          # Check if we have sample files in the repository
-          if [ -d "test_files" ]; then
-            # Copy sample files from the repository to the test directories
-            cp -r test_files/notes/* sample_data/notes_folder/ || echo "No notes files found"
-            cp -r test_files/imaging/* sample_data/imaging_folder/ || echo "No imaging files found"
-            cp test_files/sample_notes.pdf sample_data/ || echo "No sample notes file found"
-            cp test_files/sample_image.dcm sample_data/ || echo "No sample image file found"
-          else
-            # Create dummy files if test_files directory doesn't exist
-            echo "Creating dummy test files"
-            echo "Sample notes content" > sample_data/sample_notes.pdf
-            echo "Sample image content" > sample_data/sample_image.dcm
-            echo "Sample notes folder file" > sample_data/notes_folder/sample.txt
-            echo "Sample imaging folder file" > sample_data/imaging_folder/sample.txt
+          # Get commit info
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+
+          # Create payload with only case details
+          cat > test_payload.json << EOF
+          {
+            "case_details": {
+              "title": "Merged PR - ${COMMIT_AUTHOR}",
+              "plaintiff_name": "GitHub PR-${{ github.run_id }}",
+              "medical_provider": "Test Hospital",
+              "description": "Automated test triggered by merged PR: ${COMMIT_MSG}"
+            }
+          }
+          EOF
+
+          # Prepare curl authorization header if token is present
+          AUTH_HEADER=""
+          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
           fi
 
-          # List the files to verify
-          echo "Sample data files:"
-          ls -la sample_data/
-          echo "Notes folder files:"
-          ls -la sample_data/notes_folder/
-          echo "Imaging folder files:"
-          ls -la sample_data/imaging_folder/
-
-      - name: Create test payload
-        run: |
-          # Check if webhook URL is configured
-          if [ -n "${{ secrets.WEBHOOK_URL }}" ]; then
-            # Create payload with webhook
-            cat > github_test_payload.json << EOF
-            {
-              "case_details": {
-                "title": "GitHub Actions Test Case",
-                "plaintiff_name": "Test Patient",
-                "medical_provider": "GitHub Hospital",
-                "description": "This is an automated test run from GitHub Actions"
-              },
-              "webhook": {
-                "url": "${{ secrets.WEBHOOK_URL }}",
-                "events": ["test_started", "test_completed", "test_error"],
-                "headers": {
-                  "Authorization": "Bearer ${{ secrets.WEBHOOK_TOKEN || '' }}"
-                }
-              }
-            }
-            EOF
-            echo "Created payload with webhook configuration"
-          else
-            # Create payload without webhook
-            cat > github_test_payload.json << EOF
-            {
-              "case_details": {
-                "title": "GitHub Actions Test Case",
-                "plaintiff_name": "Test Patient",
-                "medical_provider": "GitHub Hospital",
-                "description": "This is an automated test run from GitHub Actions"
-              }
-            }
-            EOF
-            echo "Created payload without webhook configuration"
-          fi
-
-          # Display the payload (without sensitive information)
-          cat github_test_payload.json | grep -v "Authorization"
-
-      - name: Trigger automation API
-        id: trigger-api
-        run: |
-          # Set environment-specific variables
-          ENV="${{ github.event.inputs.environment || 'dev' }}"
-          API_URL="${{ secrets.VERIXAI_AUTOMATION_API_URL }}"
-
-          echo "Using environment: $ENV"
-          echo "API URL: $API_URL"
-
-          # Send request to the automation API
-          RESPONSE=$(curl -s -X POST \
+          # Trigger test
+          RESPONSE=$(eval curl -s -X POST \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
-            -d @github_test_payload.json \
-            $API_URL/api/run-test?env=$ENV)
+            $AUTH_HEADER \
+            -d @test_payload.json \
+            "${{ env.VERIXAI_API_URL }}/api/run-test?env=${{ env.TEST_ENV }}")
 
-          echo "API Response: $RESPONSE"
-
-          # Extract test ID from response
+          # Get test ID
           TEST_ID=$(echo $RESPONSE | jq -r '.test_id')
-          echo "TEST_ID=$TEST_ID" >> $GITHUB_ENV
+          echo "test_id=$TEST_ID" >> $GITHUB_OUTPUT
+          echo "Triggered test with ID: $TEST_ID"
 
-          # Check if the request was successful
-          STATUS=$(echo $RESPONSE | jq -r '.status')
-          if [ "$STATUS" != "success" ]; then
-            echo "Failed to trigger automation: $RESPONSE"
+          # Check if successful
+          if [ -z "$TEST_ID" ] || [ "$TEST_ID" == "null" ]; then
+            echo "Failed to trigger test. API response: $RESPONSE"
             exit 1
           fi
-
-          echo "Successfully triggered test with ID: $TEST_ID"
 
       - name: Wait for test to complete
         run: |
-          # Set environment variables
-          API_URL="${{ secrets.VERIXAI_AUTOMATION_API_URL }}"
-          API_TOKEN="${{ secrets.API_TOKEN }}"
+          TEST_ID="${{ steps.trigger-test.outputs.test_id }}"
+          if [ -z "$TEST_ID" ]; then exit 1; fi
 
-          # Calculate timeout based on input
-          TIMEOUT_MINUTES=${{ github.event.inputs.timeout_minutes || '30' }}
-          POLL_INTERVAL=30  # seconds
-          MAX_ATTEMPTS=$((TIMEOUT_MINUTES * 60 / POLL_INTERVAL))
+          AUTH_HEADER=""
+          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
+          fi
 
-          echo "Waiting for test to complete (timeout: $TIMEOUT_MINUTES minutes, max attempts: $MAX_ATTEMPTS)"
-
-          # Poll the API until the test is complete
+          MAX_ATTEMPTS=30
           ATTEMPT=0
-          COMPLETE=false
 
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$COMPLETE" = "false" ]; do
-            ATTEMPT=$((ATTEMPT+1))
-            echo "Checking test status (attempt $ATTEMPT/$MAX_ATTEMPTS)..."
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
 
-            RESPONSE=$(curl -s -X GET \
-              -H "Authorization: Bearer $API_TOKEN" \
-              $API_URL/api/test-status/$TEST_ID)
+            STATUS_RESPONSE=$(eval curl -s -X GET \
+              $AUTH_HEADER \
+              "${{ env.VERIXAI_API_URL }}/api/test-status/$TEST_ID")
 
-            TEST_STATUS=$(echo $RESPONSE | jq -r '.test_status')
-            echo "Test status: $TEST_STATUS"
+            TEST_STATUS=$(echo $STATUS_RESPONSE | jq -r '.test_status')
+            echo "Attempt $ATTEMPT: Status is $TEST_STATUS"
 
             if [ "$TEST_STATUS" = "completed" ] || [ "$TEST_STATUS" = "error" ]; then
-              COMPLETE=true
-            else
-              echo "Test still running, waiting $POLL_INTERVAL seconds..."
-              sleep $POLL_INTERVAL
+              echo "Test completed with status: $TEST_STATUS"
+              if [ "$TEST_STATUS" = "error" ]; then exit 1; fi
+              break
             fi
+
+            sleep 10
           done
 
-          if [ "$COMPLETE" = "false" ]; then
-            echo "Test did not complete within the timeout period ($TIMEOUT_MINUTES minutes)."
-            exit 1
+      - name: Get Test Results
+        if: success()
+        run: |
+          TEST_ID="${{ steps.trigger-test.outputs.test_id }}"
+
+          AUTH_HEADER=""
+          if [ -n "${{ secrets.VERIXAI_API_TOKEN }}" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.VERIXAI_API_TOKEN }}\""
           fi
 
-          # Get the final test result
-          RESULT=$(curl -s -X GET \
-            -H "Authorization: Bearer $API_TOKEN" \
-            $API_URL/api/test-results/$TEST_ID)
+          RESULTS_RESPONSE=$(eval curl -s -X GET \
+            $AUTH_HEADER \
+            "${{ env.VERIXAI_API_URL }}/api/test-results/$TEST_ID")
 
-          echo "Test result: $RESULT"
+          TEST_STATUS=$(echo "$RESULTS_RESPONSE" | jq -r '.result.status // "unknown"')
+          echo "Test Status: $TEST_STATUS"
 
-          # Save the result to a file for the artifact
-          echo $RESULT > test_result.json
+          echo "# VerixAI Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test ID:** $TEST_ID" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** $TEST_STATUS" >> $GITHUB_STEP_SUMMARY
 
-          # Check if the test passed
-          TEST_RESULT_STATUS=$(echo $RESULT | jq -r '.result.status')
-          if [ "$TEST_RESULT_STATUS" != "PASSED" ]; then
-            echo "Test failed with status: $TEST_RESULT_STATUS"
+          if [ "$TEST_STATUS" != "passed" ] && [ "$TEST_STATUS" != "success" ]; then
             exit 1
           fi
-
-          echo "Test completed successfully!"
-
-      - name: Save test results
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: test-results
-          path: |
-            test_result.json
-            github_test_payload.json

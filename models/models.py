@@ -14,11 +14,7 @@ class WebhookConfig(BaseModel):
 
 class TestRequest(BaseModel):
     case_details: Optional[CaseDetails] = None
-    notes_file_path: Optional[str] = None
-    notes_folder_path: Optional[str] = None
-    imaging_file_path: Optional[str] = None
-    imaging_folder_path: Optional[str] = None
-    webhook: Optional[WebhookConfig] = None
+    # File paths are now hardcoded to use sample_data directory
 
 class HealthResponse(BaseModel):
     status: str

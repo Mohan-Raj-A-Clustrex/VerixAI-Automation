@@ -105,20 +105,14 @@ Starts a new automation test.
     "plaintiff_name": "John Doe",
     "medical_provider": "Test Hospital",
     "description": "This is a sample test case for VerixAI automation"
-  },
-  "notes_file_path": "C:\\path\\to\\notes.pdf",
-  "notes_folder_path": "C:\\path\\to\\notes_folder",
-  "imaging_file_path": "C:\\path\\to\\image.dcm",
-  "imaging_folder_path": "C:\\path\\to\\imaging_folder",
-  "webhook": {
-    "url": "https://example.com/webhook",
-    "events": ["test_started", "test_completed", "test_error"],
-    "headers": {
-      "Authorization": "Bearer your-token-here"
-    }
   }
 }
-```
+
+**Note:** The application now uses files from the `sample_data` directory structure directly:
+- `sample_data/notes.pdf` - For clinical notes file upload
+- `sample_data/notes_folder/` - For clinical notes folder upload
+- `sample_data/imaging.dcm` - For medical imaging file upload
+- `sample_data/imaging_folder/` - For medical imaging folder upload
 
 ### Test Status
 ```
@@ -267,19 +261,15 @@ POST /api/run-test
 Example payload:
 ```json
 {
-  "test_id": "test_12345",
   "case_details": {
     "title": "Test Case",
     "plaintiff_name": "John Doe",
     "medical_provider": "Test Hospital",
     "description": "This is a test case"
-  },
-  "notes_file_path": "/path/to/notes.pdf",
-  "notes_folder_path": "/path/to/notes_folder",
-  "imaging_file_path": "/path/to/image.dcm",
-  "imaging_folder_path": "/path/to/imaging_folder"
+  }
 }
-```
+
+The API will use files from the `sample_data` directory structure directly.
 
 ### Check Test Status
 

@@ -52,15 +52,28 @@ class VerixAIAutomation:
 
         print(f"Using environment: {env}")
 
-        # Extract parameters or use defaults
+        # Extract case details from parameters
         self.case_details = self.test_params.get('case_details', None)
-        self.notes_file_path = self.test_params.get('notes_file_path', self.config.DEFAULT_NOTES_FILE_PATH)
-        self.notes_folder_path = self.test_params.get('notes_folder_path', self.config.DEFAULT_NOTES_FOLDER_PATH)
-        self.imaging_file_path = self.test_params.get('imaging_file_path', self.config.DEFAULT_IMAGING_FILE_PATH)
-        self.imaging_folder_path = self.test_params.get('imaging_folder_path', self.config.DEFAULT_IMAGING_FOLDER_PATH)
-        # Use the same paths for chronology as for notes by default
-        self.chronology_file_path = self.test_params.get('chronology_file_path', self.notes_file_path)
-        self.chronology_folder_path = self.test_params.get('chronology_folder_path', self.notes_folder_path)
+
+        # Use sample_data directory structure directly
+        sample_data_dir = os.path.join(os.getcwd(), 'sample_data')
+        print(f"Using sample_data directory: {sample_data_dir}")
+
+        # Set file and folder paths directly from sample_data directory
+        self.notes_file_path = os.path.join(sample_data_dir, 'notes.pdf')
+        self.notes_folder_path = os.path.join(sample_data_dir, 'notes_folder')
+        self.imaging_file_path = os.path.join(sample_data_dir, 'imaging.dcm')
+        self.imaging_folder_path = os.path.join(sample_data_dir, 'imaging_folder')
+
+        # Use the same paths for chronology as for notes
+        self.chronology_file_path = self.notes_file_path
+        self.chronology_folder_path = self.notes_folder_path
+
+        # Log the paths being used
+        print(f"Using notes file path: {self.notes_file_path}")
+        print(f"Using notes folder path: {self.notes_folder_path}")
+        print(f"Using imaging file path: {self.imaging_file_path}")
+        print(f"Using imaging folder path: {self.imaging_folder_path}")
 
         # Create screenshots directory
         os.makedirs(self.config.SCREENSHOTS_DIR, exist_ok=True)

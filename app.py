@@ -331,10 +331,8 @@ def run_test_in_background(test_id, test_params):
         logger.info(f"Configuration for {env}:")
         logger.info(f"  BASE_URL: {automation.config.BASE_URL}")
         logger.info(f"  LOGIN_EMAIL: {automation.config.LOGIN_EMAIL}")
-        logger.info(f"  NOTES_FILE_PATH: {automation.notes_file_path}")
-        logger.info(f"  NOTES_FOLDER_PATH: {automation.notes_folder_path}")
-        logger.info(f"  IMAGING_FILE_PATH: {automation.imaging_file_path}")
-        logger.info(f"  IMAGING_FOLDER_PATH: {automation.imaging_folder_path}")
+        # File paths are now hardcoded to use sample_data directory
+        logger.info(f"  Using sample_data directory for file and folder uploads")
 
         # Run automation with output capture and streaming
         result, stdout, stderr = capture_output(automation.run_automation, test_id)
@@ -427,12 +425,9 @@ async def run_test(
         config = config_class  # Now you're using the correct env-specific class
         test_id = f"test_{uuid.uuid4().hex[:8]}"
 
+        # Only include case details and environment in test parameters
         test_params = {
             'case_details': request.case_details.model_dump() if request.case_details else None,
-            'notes_file_path': request.notes_file_path or config.DEFAULT_NOTES_FILE_PATH,
-            'notes_folder_path': request.notes_folder_path or config.DEFAULT_NOTES_FOLDER_PATH,
-            'imaging_file_path': request.imaging_file_path or config.DEFAULT_IMAGING_FILE_PATH,
-            'imaging_folder_path': request.imaging_folder_path or config.DEFAULT_IMAGING_FOLDER_PATH,
             'env': env  # Pass the environment from the query parameter
         }
 
@@ -443,8 +438,7 @@ async def run_test(
             'logs': ''
         }
 
-        if request.webhook:
-            webhooks[test_id] = request.webhook
+        # Webhook is no longer included in the payload
 
         background_tasks.add_task(run_test_in_background, test_id, test_params)
 
@@ -668,10 +662,6 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
         test_params = {
             'case_details': payload.get('case_details'),
-            'notes_file_path': payload.get('notes_file_path', config.DEFAULT_NOTES_FILE_PATH),
-            'notes_folder_path': payload.get('notes_folder_path', config.DEFAULT_NOTES_FOLDER_PATH),
-            'imaging_file_path': payload.get('imaging_file_path', config.DEFAULT_IMAGING_FILE_PATH),
-            'imaging_folder_path': payload.get('imaging_folder_path', config.DEFAULT_IMAGING_FOLDER_PATH),
             'env': env,  # Pass the environment from the payload
             'github_event': {
                 'repository': repository,
@@ -688,13 +678,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             'logs': ''
         }
 
-        # Store webhook configuration if provided
-        if payload.get('webhook'):
-            try:
-                webhook_config = WebhookConfig(**payload.get('webhook'))
-                webhooks[test_id] = webhook_config
-            except Exception as e:
-                logger.error(f"Error parsing webhook configuration: {str(e)}")
+        # Webhook is no longer included in the payload
 
         # Use background tasks to run the test
         background_tasks.add_task(run_test_in_background, test_id, test_params)
