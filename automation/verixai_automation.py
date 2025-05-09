@@ -1,6 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
@@ -194,6 +196,25 @@ class VerixAIAutomation:
         except TimeoutException:
             return False
 
+    def wait_for_page_load(self, timeout=30):
+        """Wait for the page to fully load"""
+        try:
+            # Create a wait with the specified timeout
+            page_load_wait = WebDriverWait(self.driver, timeout)
+
+            # Wait for the document to be in ready state
+            page_load_wait.until(lambda driver: driver.execute_script('return document.readyState') == 'complete')
+
+            # Wait a bit more for any JavaScript to finish
+            time.sleep(2)
+
+            print("Page fully loaded")
+            return True
+        except TimeoutException:
+            print(f"Warning: Page load timed out after {timeout} seconds")
+            return False
+
+
     def handle_upload(self, file_path, upload_type="file"):
         """Handle file or folder upload in the upload popup"""
         try:
@@ -288,25 +309,122 @@ class VerixAIAutomation:
                 popup = self.driver.find_element(By.ID, "file-upload-popup")
                 if popup.is_displayed():
                     print("File upload popup is still visible, attempting to close it")
+
+                    # First, prepare to handle any alerts that might appear when closing
                     try:
-                        close_button = self.driver.find_element(By.ID, "fileUploadClosePopupBtn")
-                        self.driver.execute_script("arguments[0].click();", close_button)
-                    except NoSuchElementException:
-                        # Try alternative close button selectors
-                        close_buttons = self.driver.find_elements(By.XPATH,
-                            "//button[contains(@class, 'close') or contains(text(), 'Close') or contains(@class, 'cancel')]")
-                        if close_buttons:
-                            self.driver.execute_script("arguments[0].click();", close_buttons[0])
+                        # Try to find and click the close button
+                        close_button = None
+                        try:
+                            close_button = self.driver.find_element(By.ID, "fileUploadClosePopupBtn")
+                        except NoSuchElementException:
+                            # Try alternative close button selectors
+                            close_buttons = self.driver.find_elements(By.XPATH,
+                                "//button[contains(@class, 'close') or contains(text(), 'Close') or contains(@class, 'cancel')]")
+                            if close_buttons:
+                                close_button = close_buttons[0]
+
+                        # If we found a close button, click it and handle any alerts
+                        if close_button:
+                            # Click the close button
+                            print("Found close button, clicking it")
+                            self.driver.execute_script("arguments[0].click();", close_button)
+
+                            # Wait a moment for any alert to appear
+                            time.sleep(1)
+
+                            # Check for the "Files are currently uploading" alert
+                            try:
+                                # Use a short timeout to quickly check if an alert is present
+                                WebDriverWait(self.driver, 3).until(EC.alert_is_present())
+                                alert = self.driver.switch_to.alert
+                                alert_text = alert.text
+                                print(f"Upload close alert found: {alert_text}")
+
+                                # If this is the "Files are currently uploading" alert, accept it
+                                if "Files are currently uploading" in alert_text:
+                                    print("Found 'Files are currently uploading' alert, accepting it")
+                                    alert.accept()
+                                    print("Alert accepted, uploads will continue in background")
+                                else:
+                                    # For any other alert, also accept it
+                                    print(f"Found unexpected alert: {alert_text}, accepting it")
+                                    alert.accept()
+
+                                # Wait a moment for the page to update after dismissing the alert
+                                time.sleep(2)
+                            except TimeoutException:
+                                print("No alert appeared after clicking close button")
                         else:
-                            # Try clicking outside the popup
+                            # If no close button found, try clicking outside the popup
+                            print("No close button found, trying to click outside the popup")
                             self.driver.execute_script("document.body.click();")
+
+                            # Check for alerts after clicking outside
+                            try:
+                                WebDriverWait(self.driver, 3).until(EC.alert_is_present())
+                                alert = self.driver.switch_to.alert
+                                print(f"Alert appeared after clicking outside: {alert.text}")
+                                alert.accept()
+                                time.sleep(2)
+                            except TimeoutException:
+                                print("No alert appeared after clicking outside")
+                    except Exception as e:
+                        print(f"Error during close attempt: {str(e)}")
+
+                        # Try to handle any alerts that might be present
+                        try:
+                            alert = self.driver.switch_to.alert
+                            alert_text = alert.text
+                            print(f"Alert found during exception handling: {alert_text}")
+                            alert.accept()
+                            print("Alert accepted during exception handling")
+                            time.sleep(2)
+                        except:
+                            print("No alert present during exception handling")
+
+                    # Wait a bit longer to ensure any alerts are handled
                     time.sleep(2)
             except Exception as e:
                 print(f"Error checking/closing file upload popup: {str(e)}")
 
+                # Try to handle any alerts that might be present
+                try:
+                    alert = self.driver.switch_to.alert
+                    alert_text = alert.text
+                    print(f"Alert found during popup check: {alert_text}")
+                    alert.accept()
+                    print("Alert accepted during popup check")
+                    time.sleep(2)
+                except:
+                    print("No alert present during popup check")
+
             return True
         except Exception as e:
             print(f"Error during {upload_type} upload: {str(e)}")
+
+            # Check if there's an alert present that might be causing the error
+            try:
+                # Try to handle any alerts that might be present
+                alert = self.driver.switch_to.alert
+                alert_text = alert.text
+                print(f"Alert found during upload error: {alert_text}")
+
+                # If this is the "Files are currently uploading" alert, accept it
+                if "Files are currently uploading" in alert_text:
+                    print("Found 'Files are currently uploading' alert during error, accepting it")
+                    alert.accept()
+                    print("Alert accepted, uploads will continue in background")
+                    # Since we handled the alert, consider this a success
+                    time.sleep(2)
+                    return True
+                else:
+                    # For any other alert, also accept it
+                    print(f"Found unexpected alert during error: {alert_text}, accepting it")
+                    alert.accept()
+                    time.sleep(2)
+            except:
+                print("No alert present during upload error")
+
             self.take_screenshot(f"{upload_type}_upload_error")
             return False
 
@@ -367,30 +485,51 @@ class VerixAIAutomation:
             self.test_result.start_test_case("Login")
             try:
                 # Navigate to the login page
+                print(f"Navigating to {self.config.BASE_URL}")
                 self.driver.get(self.config.BASE_URL)
+
+                # Wait for the page to fully load
+                self.wait_for_page_load(timeout=30)
                 self.take_screenshot("login_page", "Login")
 
                 # Login Workflow
                 self.wait.until(EC.element_to_be_clickable((By.ID, "login-btn"))).click()
-                self.wait.until(EC.element_to_be_clickable((By.ID, "social-VerixAI-SSO"))).click()
 
-                self.wait.until(EC.visibility_of_element_located((By.NAME, "loginfmt"))).send_keys(self.config.LOGIN_EMAIL)
-                self.wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
-                self.take_screenshot("login_email_entered", "Login")
+                # Direct Keycloak login instead of Microsoft SSO
+                print("Using direct Keycloak login with username and password")
 
-                self.wait.until(EC.visibility_of_element_located((By.NAME, "passwd"))).send_keys(self.config.LOGIN_PASSWORD)
-                self.wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
+                # Wait for the username field to be visible and enter the username
+                self.wait.until(EC.visibility_of_element_located((By.ID, "username"))).send_keys(self.config.LOGIN_USERNAME)
+                self.take_screenshot("login_username_entered", "Login")
+
+                # Enter the password
+                self.driver.find_element(By.ID, "password").send_keys(self.config.LOGIN_PASSWORD)
                 self.take_screenshot("login_password_entered", "Login")
 
-                # Handle "Stay signed in?" prompt
-                try:
-                    self.wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
-                except TimeoutException:
-                    print("No 'Stay signed in' prompt appeared, continuing...")
+                # Click the login button
+                self.wait.until(EC.element_to_be_clickable((By.ID, "kc-login"))).click()
+                print("Clicked Keycloak login button")
+
+                # Wait for the page to start loading after login
+                time.sleep(5)
+
 
                 # Verify login success by checking for elements on the dashboard
+                print("Verifying login success...")
+
+                # Wait for the page to load after login
+                self.wait_for_page_load(timeout=20)
+
+                # Continue with normal login verification
+                print("Looking for dashboard elements...")
                 self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".dt-buttons")))
+
+                # Wait for the dashboard page to fully load
+                print("Waiting for dashboard page to fully load...")
+                self.wait_for_page_load(timeout=30)
+
                 self.take_screenshot("login_successful", "Login")
+                print("Login successful!")
 
                 # Mark login test case as passed
                 self.test_result.end_test_case("Login", passed=True)
@@ -404,9 +543,13 @@ class VerixAIAutomation:
             # Start Case Creation Test Case
             self.test_result.start_test_case("Case Creation")
             try:
+
+
                 # Create New Case
+                print("Looking for New Case button...")
                 new_case_button = self.wait.until(EC.element_to_be_clickable(
                     (By.CSS_SELECTOR, ".dt-buttons .dt-button.bg-purple-600")))
+                print("Found New Case button, clicking...")
                 new_case_button.click()
                 self.take_screenshot("new_case_form", "Case Creation")
 

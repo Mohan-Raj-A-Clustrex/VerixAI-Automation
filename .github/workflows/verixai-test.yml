@@ -4,8 +4,10 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - dev # Only trigger when PRs are merged to dev branch
-  workflow_dispatch: # Allows manual triggering from GitHub UI
+      - dev
+      - staging
+      - prod
+  workflow_dispatch: 
 
 env:
   TEST_ENV: dev

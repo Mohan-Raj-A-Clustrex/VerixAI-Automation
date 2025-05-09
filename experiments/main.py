@@ -15,7 +15,7 @@ AZURE_ENDPOINT = "https://cmengine-openaieast.openai.azure.com/"
 AZURE_API_VERSION = "2024-08-01-preview"
 MODEL_NAME = "gpt-4o"
 
-LOGIN_EMAIL = "amohanraj@cormetrix.com"
+LOGIN_USERNAME = "amohanraj@cormetrix.com"
 LOGIN_PASSWORD = "Mohan4161@raj"
 
 NOTES_FILE_PATH = r"C:\Users\amohanraj_clustrex\Downloads\06-03-24 limited echo report_Redacted.pdf"
@@ -398,7 +398,7 @@ def automate_case_workflow(driver, case_details):
     wait.until(EC.element_to_be_clickable((By.ID, "login-btn"))).click()
     wait.until(EC.element_to_be_clickable((By.ID, "social-VerixAI-SSO"))).click()
 
-    wait.until(EC.visibility_of_element_located((By.NAME, "loginfmt"))).send_keys(LOGIN_EMAIL)
+    wait.until(EC.visibility_of_element_located((By.NAME, "loginfmt"))).send_keys(LOGIN_USERNAME)
     wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
 
     wait.until(EC.visibility_of_element_located((By.NAME, "passwd"))).send_keys(LOGIN_PASSWORD)
