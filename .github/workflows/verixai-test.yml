@@ -8,7 +8,7 @@ on:
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 env:
-  VERIXAI_API_URL: https://dev-verixai-automation.cormetrix.com
+  VERIXAI_API_URL: https://dev-verixai.automation.cormetrix.com
   TEST_ENV: dev
 
 jobs:
