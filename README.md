@@ -184,7 +184,7 @@ A simple web interface for viewing real-time logs from tests.
    - Open Postman
    - Create a new request
    - Set the method to `POST`
-   - Set the URL to `http://localhost:5000/api/run-test`
+   - Set the URL to `http://localhost:8001/api/run-test`
    - Go to the "Headers" tab and add:
      - Key: `Content-Type`
      - Value: `application/json`
@@ -199,7 +199,7 @@ A simple web interface for viewing real-time logs from tests.
 
 4. **Check Test Status**:
    - Create a new GET request in Postman
-   - Set the URL to `http://localhost:5000/api/test-status/{test_id}`
+   - Set the URL to `http://localhost:8001/api/test-status/{test_id}`
    - Send the request
    - You will receive the current status, logs, and results of the test
 
@@ -234,7 +234,7 @@ If you encounter issues:
 
 2. Run the container:
    ```bash
-   docker run -p 5000:5000 --env-file .env verixai-automation:latest
+   docker run -p 8001:8001 --env-file .env verixai-automation:latest
    ```
 
 ### Kubernetes Deployment

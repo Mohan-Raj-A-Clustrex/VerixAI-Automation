@@ -330,7 +330,7 @@ def run_test_in_background(test_id, test_params):
         logger.info(f"Test {test_id} using environment: {env}")
         logger.info(f"Configuration for {env}:")
         logger.info(f"  BASE_URL: {automation.config.BASE_URL}")
-        logger.info(f"  LOGIN_EMAIL: {automation.config.LOGIN_EMAIL}")
+        logger.info(f"  LOGIN_USERNAME: {automation.config.LOGIN_USERNAME}")
         # File paths are now hardcoded to use sample_data directory
         logger.info(f"  Using sample_data directory for file and folder uploads")
 
@@ -467,56 +467,6 @@ async def test_status(test_id: str):
         'logs': running_tests[test_id].get('logs', '')
     }
 
-@app.get("/api/active-tests")
-async def list_active_tests():
-    """API endpoint to list all active tests"""
-    active_tests = []
-    for test_id, test_data in running_tests.items():
-        active_tests.append({
-            'test_id': test_id,
-            'status': test_data['status'],
-            'start_time': test_data['start_time'],
-            'end_time': test_data.get('end_time'),
-            'has_webhook': test_id in webhooks
-        })
-
-    return {
-        'status': 'success',
-        'count': len(active_tests),
-        'tests': active_tests
-    }
-
-@app.get("/api/test-results")
-async def list_test_results():
-    """API endpoint to list all test results"""
-    results_dir = os.path.join(os.getcwd(), 'test_results')
-    if not os.path.exists(results_dir):
-        return {
-            'status': 'success',
-            'message': 'No test results found',
-            'results': []
-        }
-
-    results = []
-    for filename in os.listdir(results_dir):
-        if filename.endswith('.json'):
-            with open(os.path.join(results_dir, filename), 'r') as f:
-                result = json.load(f)
-                results.append({
-                    'test_id': result.get('test_id'),
-                    'status': result.get('status'),
-                    'start_time': result.get('start_time'),
-                    'end_time': result.get('end_time'),
-                    'duration_seconds': result.get('duration_seconds'),
-                    'test_cases': result.get('test_cases', [])
-                })
-
-    return {
-        'status': 'success',
-        'count': len(results),
-        'results': results
-    }
-
 @app.get("/api/test-results/{test_id}")
 async def get_test_result(test_id: str):
     """API endpoint to get a specific test result by ID"""
@@ -551,40 +501,6 @@ async def get_test_result(test_id: str):
 
     # If we get here, the test was not found
     raise HTTPException(status_code=404, detail=f"Test ID {test_id} not found")
-
-@app.post("/api/test-webhook/{test_id}")
-async def register_webhook(test_id: str, webhook: WebhookConfig):
-    """API endpoint to register a webhook for an existing test"""
-    # Check if the test exists
-    if test_id not in running_tests and not any(
-        json.load(open(os.path.join(os.getcwd(), 'test_results', f))).get('test_id') == test_id
-        for f in os.listdir(os.path.join(os.getcwd(), 'test_results'))
-        if f.endswith('.json') and os.path.exists(os.path.join(os.getcwd(), 'test_results', f))
-    ):
-        raise HTTPException(status_code=404, detail=f"Test ID {test_id} not found")
-
-    # Register the webhook
-    webhooks[test_id] = webhook
-
-    # If the test is already completed, send a notification immediately
-    if test_id in running_tests and running_tests[test_id]['status'] in ['completed', 'error']:
-        event_type = 'test_completed' if running_tests[test_id]['status'] == 'completed' else 'test_error'
-        data = {
-            'status': running_tests[test_id]['status'],
-            'start_time': running_tests[test_id]['start_time'],
-            'end_time': running_tests[test_id].get('end_time', datetime.now().isoformat()),
-            'result': running_tests[test_id].get('result')
-        }
-        if running_tests[test_id]['status'] == 'error':
-            data['error'] = running_tests[test_id].get('error', 'Unknown error')
-
-        send_webhook_notification(test_id, event_type, data)
-
-    return {
-        'status': 'success',
-        'message': f'Webhook registered for test ID: {test_id}',
-        'test_id': test_id
-    }
 
 @app.websocket("/ws/test-logs/{test_id}")
 async def websocket_endpoint(websocket: WebSocket, test_id: str):
@@ -629,70 +545,6 @@ async def websocket_endpoint(websocket: WebSocket, test_id: str):
         except:
             pass
 
-@app.post("/api/github-webhook")
-async def github_webhook(request: Request, background_tasks: BackgroundTasks):
-    """Webhook endpoint for GitHub Actions"""
-    try:
-        # Get JSON payload
-        payload = await request.json()
-        if not payload:
-            raise HTTPException(status_code=400, detail="No JSON payload provided")
-
-        # Extract repository and event information
-        repository = payload.get('repository', {}).get('full_name', 'unknown')
-        event_type = request.headers.get('X-GitHub-Event', 'unknown')
-
-        logger.info(f"Received GitHub webhook: {event_type} from {repository}")
-
-        # Generate a test ID
-        test_id = f"github_{uuid.uuid4().hex[:8]}"
-
-        # Extract test parameters from the payload or use defaults
-        # Get environment from payload or default to 'dev'
-        env = payload.get('env', 'dev')
-
-        # Validate environment
-        config_class = env_map.get(env)
-        if not config_class:
-            logger.warning(f"Invalid environment specified in GitHub webhook: {env}, defaulting to 'dev'")
-            env = 'dev'
-            config_class = DevConfig
-
-        config = config_class
-
-        test_params = {
-            'case_details': payload.get('case_details'),
-            'env': env,  # Pass the environment from the payload
-            'github_event': {
-                'repository': repository,
-                'event_type': event_type,
-                'sender': payload.get('sender', {}).get('login', 'unknown')
-            }
-        }
-
-        # Start the test in a background thread
-        running_tests[test_id] = {
-            'status': 'running',
-            'start_time': datetime.now().isoformat(),
-            'params': test_params,
-            'logs': ''
-        }
-
-        # Webhook is no longer included in the payload
-
-        # Use background tasks to run the test
-        background_tasks.add_task(run_test_in_background, test_id, test_params)
-
-        return {
-            'status': 'success',
-            'message': f'Test started with ID: {test_id}',
-            'test_id': test_id
-        }
-
-    except Exception as e:
-        logger.error(f"Error processing GitHub webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing GitHub webhook: {str(e)}")
-
 if __name__ == '__main__':
     import uvicorn
 
@@ -705,5 +557,5 @@ if __name__ == '__main__':
     os.makedirs('test_results', exist_ok=True)
 
     # Start the FastAPI app with uvicorn
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8001))
     uvicorn.run(app, host='0.0.0.0', port=port)

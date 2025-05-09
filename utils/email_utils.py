@@ -1,11 +1,30 @@
 import smtplib
 import os
 import json
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from datetime import datetime
 from config import Config
+
+
+def validate_email(email):
+    """
+    Validate email address format
+
+    Args:
+        email (str): Email address to validate
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    # Trim whitespace before validation
+    email = email.strip() if email else ""
+
+    # Simple regex for email validation
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
 
 def send_test_result_email(test_id, status, details, screenshots=None):
     """
@@ -18,15 +37,43 @@ def send_test_result_email(test_id, status, details, screenshots=None):
         screenshots (list): List of dictionaries with screenshot data and filenames
     """
     # Check if email configuration is available
-    if not all([Config.SMTP_SERVER, Config.EMAIL_USERNAME, Config.EMAIL_PASSWORD, Config.EMAIL_RECIPIENTS]):
+    if not all([Config.SMTP_SERVER, Config.EMAIL_USERNAME, Config.EMAIL_PASSWORD]):
         print("Email configuration is incomplete. Skipping email notification.")
         return False
+
+    # Validate and filter recipients
+    recipients = []
+    if hasattr(Config, 'EMAIL_RECIPIENTS') and Config.EMAIL_RECIPIENTS:
+        # Debug output to help diagnose issues
+        print(f"Raw EMAIL_RECIPIENTS: {Config.EMAIL_RECIPIENTS}")
+        print(f"Type: {type(Config.EMAIL_RECIPIENTS)}")
+
+        # Handle both string and list inputs
+        email_list = Config.EMAIL_RECIPIENTS
+        if isinstance(email_list, str):
+            email_list = [e.strip() for e in email_list.split(',') if e.strip()]
+            print(f"Parsed email list from string: {email_list}")
+
+        # Filter out empty strings and validate email format
+        for email in email_list:
+            email = email.strip()
+            if email and validate_email(email):
+                recipients.append(email)
+                print(f"Added valid recipient: {email}")
+            elif email:  # Only log if not empty
+                print(f"Warning: Invalid email format: '{email}'. Skipping this recipient.")
+
+    if not recipients:
+        print("No valid email recipients found. Skipping email notification.")
+        return False
+
+    print(f"Sending email to {len(recipients)} recipient(s): {', '.join(recipients)}")
 
     try:
         # Create message container
         msg = MIMEMultipart()
         msg['From'] = Config.EMAIL_USERNAME
-        msg['To'] = ', '.join(Config.EMAIL_RECIPIENTS)
+        msg['To'] = ', '.join(recipients)
         msg['Subject'] = f"VerixAI Automation Test {status}: {test_id}"
 
         # Get test start and end times
@@ -136,13 +183,16 @@ def send_test_result_email(test_id, status, details, screenshots=None):
                 case_duration = test_case.get('duration_seconds', 0)
                 case_minutes, case_seconds = divmod(int(case_duration), 60)
                 case_duration_formatted = f"{case_minutes}m {case_seconds}s"
-                case_screenshot_count = test_case.get('screenshot_count', 0)
+
+                # Get screenshot count and add to the display if available
+                case_screenshots = test_case.get('screenshots', [])
+                case_screenshot_info = f" ({len(case_screenshots)} screenshots)" if case_screenshots else ""
 
                 html_content += f"""
                     <div class="test-case test-case-{'passed' if case_status == 'PASSED' else 'failed'}">
                         <div class="test-case-header">
                             <h4 style="margin: 0;">{case_name} <span class="badge badge-{'success' if case_status == 'PASSED' else 'danger'}">{case_status}</span></h4>
-                            <p class="duration">Duration: {case_duration_formatted}</p>
+                            <p class="duration">Duration: {case_duration_formatted}{case_screenshot_info}</p>
                         </div>
                         <div class="test-case-content">
                 """
@@ -196,11 +246,19 @@ def send_test_result_email(test_id, status, details, screenshots=None):
                 server.starttls()
                 server.login(Config.EMAIL_USERNAME, Config.EMAIL_PASSWORD)
                 server.send_message(msg)
-                print(f"Email notification sent successfully to {Config.EMAIL_RECIPIENTS}")
+
+                # Format recipient list for logging
+                recipient_list = ', '.join(recipients)
+                print(f"✅ Email notification sent successfully to: {recipient_list}")
+
+                # Log screenshot count
+                if screenshots:
+                    print(f"   - Attached {len(screenshots)} screenshots to the email")
+
                 return True
         except Exception as e:
-            print(f"SMTP Error: {str(e)}")
-            print("Email notification could not be sent. This is non-critical and the test will continue.")
+            print(f"❌ SMTP Error: {str(e)}")
+            print("   Email notification could not be sent. This is non-critical and the test will continue.")
             return False
 
     except Exception as e:
@@ -214,19 +272,42 @@ def send_test_result_email_from_json(test_result_json_path):
 
     Args:
         test_result_json_path (str): Path to the test result JSON file
+
+    Returns:
+        bool: True if email was sent successfully, False otherwise
     """
     try:
+        print(f"Preparing email from test result JSON: {test_result_json_path}")
+
+        # Check if file exists
+        if not os.path.exists(test_result_json_path):
+            print(f"❌ Error: Test result file not found: {test_result_json_path}")
+            return False
+
         # Load the test result JSON
         with open(test_result_json_path, 'r') as f:
             test_result = json.load(f)
 
         test_id = test_result.get('test_id')
+        if not test_id:
+            print("❌ Error: Test ID not found in result JSON")
+            return False
+
         status = test_result.get('status')
+        if not status:
+            print("❌ Error: Test status not found in result JSON")
+            return False
+
         screenshots = test_result.get('screenshots', [])
+        print(f"Found {len(screenshots)} screenshots in test result")
 
         # Send the email
+        print(f"Sending email for test {test_id} with status {status}")
         return send_test_result_email(test_id, status, test_result, screenshots)
 
+    except json.JSONDecodeError:
+        print(f"❌ Error: Invalid JSON format in file: {test_result_json_path}")
+        return False
     except Exception as e:
-        print(f"Error preparing email from JSON: {str(e)}")
+        print(f"❌ Error preparing email from JSON: {str(e)}")
         return False

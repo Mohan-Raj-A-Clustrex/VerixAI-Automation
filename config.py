@@ -42,40 +42,43 @@ class BaseConfig:
 class DevConfig(BaseConfig):
     AZURE_API_KEY = os.getenv('DEV_AZURE_API_KEY')
     AZURE_ENDPOINT = os.getenv('DEV_AZURE_ENDPOINT')
-    LOGIN_EMAIL = os.getenv('DEV_LOGIN_EMAIL')
+    LOGIN_USERNAME = os.getenv('DEV_LOGIN_USERNAME')
     LOGIN_PASSWORD = os.getenv('DEV_LOGIN_PASSWORD')
     BASE_URL = os.getenv('DEV_BASE_URL')
     SMTP_SERVER = os.getenv('DEV_SMTP_SERVER')
     SMTP_PORT = int(os.getenv('DEV_SMTP_PORT', 587))
     EMAIL_USERNAME = os.getenv('DEV_EMAIL_USERNAME')
     EMAIL_PASSWORD = os.getenv('DEV_EMAIL_PASSWORD')
-    EMAIL_RECIPIENTS = os.getenv('DEV_EMAIL_RECIPIENTS', '').split(',')
+    # Split by comma and strip whitespace from each email
+    EMAIL_RECIPIENTS = [email.strip() for email in os.getenv('DEV_EMAIL_RECIPIENTS', '').split(',') if email.strip()]
 
 
 class StagingConfig(BaseConfig):
     AZURE_API_KEY = os.getenv('STAGING_AZURE_API_KEY')
     AZURE_ENDPOINT = os.getenv('STAGING_AZURE_ENDPOINT')
-    LOGIN_EMAIL = os.getenv('STAGING_LOGIN_EMAIL')
+    LOGIN_USERNAME = os.getenv('STAGING_LOGIN_USERNAME')
     LOGIN_PASSWORD = os.getenv('STAGING_LOGIN_PASSWORD')
     BASE_URL = os.getenv('STAGING_BASE_URL')
     SMTP_SERVER = os.getenv('STAGING_SMTP_SERVER')
     SMTP_PORT = int(os.getenv('STAGING_SMTP_PORT', 587))
     EMAIL_USERNAME = os.getenv('STAGING_EMAIL_USERNAME')
     EMAIL_PASSWORD = os.getenv('STAGING_EMAIL_PASSWORD')
-    EMAIL_RECIPIENTS = os.getenv('STAGING_EMAIL_RECIPIENTS', '').split(',')
+    # Split by comma and strip whitespace from each email
+    EMAIL_RECIPIENTS = [email.strip() for email in os.getenv('STAGING_EMAIL_RECIPIENTS', '').split(',') if email.strip()]
 
 
 class ProdConfig(BaseConfig):
     AZURE_API_KEY = os.getenv('PROD_AZURE_API_KEY')
     AZURE_ENDPOINT = os.getenv('PROD_AZURE_ENDPOINT')
-    LOGIN_EMAIL = os.getenv('PROD_LOGIN_EMAIL')
+    LOGIN_USERNAME = os.getenv('PROD_LOGIN_USERNAME')
     LOGIN_PASSWORD = os.getenv('PROD_LOGIN_PASSWORD')
     BASE_URL = os.getenv('PROD_BASE_URL')
     SMTP_SERVER = os.getenv('PROD_SMTP_SERVER')
     SMTP_PORT = int(os.getenv('PROD_SMTP_PORT', 587))
     EMAIL_USERNAME = os.getenv('PROD_EMAIL_USERNAME')
     EMAIL_PASSWORD = os.getenv('PROD_EMAIL_PASSWORD')
-    EMAIL_RECIPIENTS = os.getenv('PROD_EMAIL_RECIPIENTS', '').split(',')
+    # Split by comma and strip whitespace from each email
+    EMAIL_RECIPIENTS = [email.strip() for email in os.getenv('PROD_EMAIL_RECIPIENTS', '').split(',') if email.strip()]
 
 
 # Select config class based on APP_ENV
@@ -90,7 +93,7 @@ Config = config_by_env.get(APP_ENV, DevConfig)  # Fallback to DevConfig
 
 # Optional: Helper method to validate and print config
 def validate_and_print_config():
-    required = ['AZURE_API_KEY', 'AZURE_ENDPOINT', 'LOGIN_EMAIL', 'LOGIN_PASSWORD', 'BASE_URL']
+    required = ['AZURE_API_KEY', 'AZURE_ENDPOINT', 'LOGIN_USERNAME', 'LOGIN_PASSWORD', 'BASE_URL']
     missing = [field for field in required if not getattr(Config, field)]
 
     if missing:
