@@ -4,11 +4,10 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - master # Only trigger when PRs are merged to master branch
+      - dev # Only trigger when PRs are merged to dev branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 env:
-  VERIXAI_API_URL: https://dev-verixai.automation.cormetrix.com
   TEST_ENV: dev
 
 jobs:
@@ -23,49 +22,45 @@ jobs:
       - name: Trigger VerixAI Automation Test
         id: trigger-test
         shell: pwsh
+        env:
+          VERIXAI_API_DOMAIN: ${{ secrets.VERIXAI_API_DOMAIN }}
+          VERIXAI_API_TOKEN: ${{ secrets.VERIXAI_API_TOKEN }}
         run: |
-          # Get commit info
           $COMMIT_MSG = git log -1 --pretty=format:"%s"
           $COMMIT_AUTHOR = git log -1 --pretty=format:"%an"
 
-          # Create payload with only case details
           $payload = @{
             case_details = @{
-              title = "Merged PR - $COMMIT_AUTHOR"
-              plaintiff_name = "GitHub PR-${{ github.run_id }}"
+              title = "Sample Test Case"
+              plaintiff_name = "John Doe"
               medical_provider = "Test Hospital"
-              description = "Automated test triggered by merged PR: $COMMIT_MSG"
+              description = "This is a sample test case for VerixAI automation"
             }
           } | ConvertTo-Json -Depth 10
 
-          # Save payload to file for debugging
           $payload | Out-File -FilePath test_payload.json
 
-          # Prepare headers
           $headers = @{
             "Content-Type" = "application/json"
           }
 
-          # Add authorization header if token is present
-          $apiToken = "${{ secrets.VERIXAI_API_TOKEN }}"
-          if ($apiToken -and $apiToken -ne "") {
-            $headers["Authorization"] = "Bearer $apiToken"
+          if ($env:VERIXAI_API_TOKEN -and $env:VERIXAI_API_TOKEN -ne "") {
+            $headers["Authorization"] = "Bearer $env:VERIXAI_API_TOKEN"
           }
 
-          # Trigger test
-          try {
-            $response = Invoke-RestMethod -Uri "${{ env.VERIXAI_API_URL }}/api/run-test?env=${{ env.TEST_ENV }}" -Method Post -Headers $headers -Body $payload
+          $url = "https://$env:VERIXAI_API_DOMAIN/api/run-test?env=${{ env.TEST_ENV }}"
+          Write-Output "Triggering API at: $url"
 
-            # Output response for debugging
+          try {
+            $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $payload
+
             Write-Output "Response from API:"
             $response | ConvertTo-Json
 
-            # Get test ID
             $TEST_ID = $response.test_id
             "test_id=$TEST_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Output "Triggered test with ID: $TEST_ID"
 
-            # Check if successful
             if (-not $TEST_ID) {
               Write-Output "Failed to trigger test. API response: $($response | ConvertTo-Json)"
               exit 1
@@ -77,5 +72,3 @@ jobs:
             Write-Output "Response: $($_.ErrorDetails.Message)"
             exit 1
           }
-
-      # Follow-up steps remain unchanged
